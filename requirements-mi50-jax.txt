@@ -1,0 +1,15 @@
+# SDXL/Flax runtime packages. Install these after the ROCm/JAX nightly packages
+# from https://rocm.nightlies.amd.com/v2-staging/gfx906/.
+#
+# Do not put jaxlib, jax_rocm7_plugin, jax_rocm7_pjrt, or ROCm runtime wheels
+# here; install them from the gfx906 nightly index so the binary stack matches
+# your MI50 cards.
+jax
+diffusers[flax]
+flax
+transformers
+accelerate
+safetensors
+sentencepiece
+Pillow
+numpy

@@ -1,0 +1,50 @@
+# Reproducible image for SDXL/JAX on AMD MI50 (gfx906).
+#
+# Build:
+#   docker build -f Dockerfile.mi50-jax -t sdxl-mi50-jax .
+#   # Pin to a specific gfx906 nightly date:
+#   docker build -f Dockerfile.mi50-jax --build-arg ROCM_DATE=20260428 -t sdxl-mi50-jax:20260428 .
+#
+# Run on the MI50 host (note: the host must already have a recent enough
+# kernel/amdgpu module for gfx906; the wheels themselves bundle ROCm 7
+# userspace libs):
+#   docker run --rm -it \
+#     --device=/dev/kfd --device=/dev/dri --group-add video \
+#     --ipc=host --shm-size 64G \
+#     --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
+#     -v "$PWD/outputs:/workspace/outputs" \
+#     -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
+#     sdxl-mi50-jax \
+#     scripts/run_sdxl_jax.sh --check-only --compile-smoke-test
+
+FROM python:3.12-bookworm
+
+ARG ROCM_DATE=""
+
+ENV PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      ca-certificates curl git \
+      libnuma1 libelf1 libdrm2 libtinfo6 \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+COPY requirements-mi50-jax.txt scripts/install_rocm_jax.sh ./
+COPY scripts ./scripts
+
+RUN ROCM_DATE="${ROCM_DATE}" PYTHON_BIN=python3 bash scripts/install_rocm_jax.sh "${ROCM_DATE}"
+
+COPY . .
+
+ENV HIP_VISIBLE_DEVICES=0,1 \
+    JAX_PLATFORMS=rocm \
+    XLA_PYTHON_CLIENT_PREALLOCATE=false \
+    XLA_PYTHON_CLIENT_MEM_FRACTION=0.90 \
+    MIOPEN_FIND_MODE=FAST
+
+CMD ["bash"]

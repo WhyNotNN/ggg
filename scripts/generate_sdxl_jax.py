@@ -74,6 +74,15 @@ def parse_args() -> argparse.Namespace:
         help="JAX platform name. Use 'rocm' on AMD GPUs or 'cpu' only for diagnostics.",
     )
     parser.add_argument(
+        "--mem-fraction",
+        type=float,
+        default=None,
+        help=(
+            "Override XLA_PYTHON_CLIENT_MEM_FRACTION. On MI50 16GB, 0.85-0.92 "
+            "leaves room for SDXL UNet attention spikes."
+        ),
+    )
+    parser.add_argument(
         "--check-only",
         action="store_true",
         help="Print JAX devices and exit before loading SDXL.",
@@ -109,6 +118,22 @@ def configure_environment(args: argparse.Namespace) -> None:
 
     # Avoid reserving all VRAM up front; this makes OOM behavior easier to diagnose on 16GB cards.
     os.environ.setdefault("XLA_PYTHON_CLIENT_PREALLOCATE", "false")
+
+    if args.mem_fraction is not None:
+        os.environ["XLA_PYTHON_CLIENT_MEM_FRACTION"] = f"{args.mem_fraction:.4f}"
+    else:
+        # Cap the per-process VRAM ceiling on MI50 16GB so the allocator does
+        # not fragment to OOM during SDXL UNet attention.
+        os.environ.setdefault("XLA_PYTHON_CLIENT_MEM_FRACTION", "0.90")
+
+    # MIOpen tunes kernels at first call. On gfx906 the FAST mode skips long
+    # autotuning passes that occasionally hang on Vega20.
+    os.environ.setdefault("MIOPEN_FIND_MODE", "FAST")
+    os.environ.setdefault("MIOPEN_LOG_LEVEL", "3")
+
+    # Some Diffusers Flax codepaths expect JAX_PLATFORMS, others JAX_PLATFORM_NAME.
+    if args.platform:
+        os.environ.setdefault("JAX_PLATFORMS", args.platform)
 
 
 def dtype_from_name(name: str) -> Any:

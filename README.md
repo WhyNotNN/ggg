@@ -1,65 +1,49 @@
 # SDXL generation with JAX on 2× AMD MI50 (gfx906)
 
-This repository runs Stable Diffusion XL text-to-image generation through the
-Hugging Face Diffusers Flax/JAX pipeline on AMD Instinct MI50 16GB cards.
-MI50 uses the `gfx906` architecture, so we install AMD's `gfx906` ROCm and
-JAX nightly Python wheels from:
+Запуск Stable Diffusion XL через Diffusers Flax/JAX на AMD Instinct MI50 16GB.
+MI50 — это `gfx906`, поэтому ставим `gfx906`-сборки ROCm и JAX из ночного
+индекса AMD:
 
 ```text
 https://rocm.nightlies.amd.com/v2-staging/gfx906/
 ```
 
-> Note: AMD has stopped shipping ROCm support for MI50 in stable releases.
-> The `v2-staging/gfx906` index is the only supported way to get a working
-> JAX/PJRT stack on `gfx906` today. Treat the wheels as a coupled set: pin
-> `jaxlib`, `jax-rocm7-plugin`, `jax-rocm7-pjrt`, and
-> `rocm-sdk-libraries-gfx906` to the **same nightly date**.
+> AMD больше не выпускает поддержку MI50 в стабильном ROCm. `v2-staging/gfx906`
+> — единственный рабочий путь получить JAX/PJRT под `gfx906` сегодня. Колёса
+> `jaxlib`, `jax-rocm7-plugin`, `jax-rocm7-pjrt` и `rocm-sdk-libraries-gfx906`
+> ставятся одной датой, иначе ABI PJRT-плагина не сойдётся с ROCm-рантаймом.
 
-## Quick start (host with MI50)
+## Требования к хосту
 
-The MI50 host needs `/dev/kfd` and `/dev/dri` exposed and a kernel/`amdgpu`
-module recent enough to support `gfx906`. Everything else (the ROCm 7
-userspace) is bundled in the `rocm-sdk-libraries-gfx906` wheel.
+- Linux x86_64 с подгруженным `amdgpu`, доступными `/dev/kfd` и `/dev/dri`,
+  пользователь в группе `video` (или `render`).
+- Python **3.11 / 3.12 / 3.13 / 3.14** (для более старых интерпретаторов
+  колёс на индексе нет). Рекомендуется 3.12.
+- `pip >= 24`.
+- Достаточно свободного места под кэш моделей HF (SDXL base ~ 13 GB).
 
-### Option A: bare metal / venv
+Сам ROCm 7 userspace притаскивается колесом `rocm-sdk-libraries-gfx906` —
+ставить системный `/opt/rocm` не обязательно.
+
+## Установка
 
 ```bash
-# Python 3.11, 3.12, 3.13 or 3.14 — the gfx906 index does not publish
-# wheels for older interpreters. 3.12 is recommended.
 python3.12 -m venv .venv && source .venv/bin/activate
 
-# Install ROCm + JAX wheels for gfx906, plus Diffusers/Flax stack.
+# Свежие nightly:
 PYTHON_BIN=python scripts/install_rocm_jax.sh
 
-# Or pin every wheel to the same nightly date for reproducibility:
+# Или приколотить всё к одной ночной дате (рекомендуется для повторяемости):
 PYTHON_BIN=python scripts/install_rocm_jax.sh 20260428
 ```
 
-### Option B: Docker
-
-```bash
-docker build -f Dockerfile.mi50-jax -t sdxl-mi50-jax .
-# or pinned:
-docker build -f Dockerfile.mi50-jax \
-  --build-arg ROCM_DATE=20260428 -t sdxl-mi50-jax:20260428 .
-
-docker run --rm -it \
-  --device=/dev/kfd --device=/dev/dri --group-add video \
-  --ipc=host --shm-size 64G \
-  --cap-add=SYS_PTRACE --security-opt seccomp=unconfined \
-  -v "$PWD/outputs:/workspace/outputs" \
-  -v "$HOME/.cache/huggingface:/root/.cache/huggingface" \
-  sdxl-mi50-jax \
-  scripts/run_sdxl_jax.sh --check-only --compile-smoke-test
-```
-
-If you use a private or gated Hugging Face model, log in once before running:
+Для приватных/гейтированных моделей HF — один раз залогиниться:
 
 ```bash
 huggingface-cli login
 ```
 
-## 1. Verify both MI50 cards
+## 1. Проверить, что JAX видит обе MI50
 
 ```bash
 scripts/run_sdxl_jax.sh \
@@ -69,14 +53,13 @@ scripts/run_sdxl_jax.sh \
   --require-devices 2
 ```
 
-Expected output: two ROCm devices (e.g. `rocm:0` and `rocm:1`) and
-`compile smoke test ok`. If the smoke test fails, the ROCm/JAX nightly set is
-not compiling on `gfx906` correctly — try pinning to an earlier nightly date
-via `scripts/install_rocm_jax.sh <YYYYMMDD>`.
+Должны увидеть два устройства `rocm:0` и `rocm:1` и `compile smoke test ok`.
+Если smoke-тест валится — поставь более старую дату через
+`scripts/install_rocm_jax.sh <YYYYMMDD>`.
 
-## 2. Generate images
+## 2. Сгенерировать картинки
 
-One 1024×1024 image per MI50 (two images total):
+По одной 1024×1024 на каждую MI50:
 
 ```bash
 scripts/run_sdxl_jax.sh \
@@ -91,7 +74,7 @@ scripts/run_sdxl_jax.sh \
   --output-dir outputs/sdxl-mi50
 ```
 
-Single-card run:
+На одной карте:
 
 ```bash
 HIP_VISIBLE_DEVICES=0 scripts/run_sdxl_jax.sh \
@@ -101,34 +84,34 @@ HIP_VISIBLE_DEVICES=0 scripts/run_sdxl_jax.sh \
   --output-dir outputs/sdxl-mi50
 ```
 
-The first run compiles the JAX program and downloads model weights, so it is
-much slower than later runs with the same tensor shapes.
+Первый запуск долгий: компилируется JAX-программа и скачиваются веса. Повторные
+запуски с теми же формами тензоров — быстрые.
 
-## What `scripts/run_sdxl_jax.sh` sets for you
+## Что делает `scripts/run_sdxl_jax.sh`
 
-The wrapper exports values that matter on `gfx906` 16GB:
+Прокидывает переменные, которые важны на `gfx906` 16GB, и зовёт
+`generate_sdxl_jax.py`:
 
 - `JAX_PLATFORMS=rocm`
-- `XLA_PYTHON_CLIENT_PREALLOCATE=false` — do not reserve all VRAM up front.
-- `XLA_PYTHON_CLIENT_MEM_FRACTION=0.90` — soft cap below 16GB, headroom for
-  SDXL UNet attention spikes.
-- `MIOPEN_FIND_MODE=FAST` — skip MIOpen autotuning passes that can hang on
-  Vega20.
-- `HIP_VISIBLE_DEVICES=0,1` — both MI50s by default.
+- `XLA_PYTHON_CLIENT_PREALLOCATE=false` — не выгребать сразу всю VRAM.
+- `XLA_PYTHON_CLIENT_MEM_FRACTION=0.90` — мягкий потолок на процесс, чтобы
+  attention в SDXL не влетал в OOM из-за фрагментации.
+- `MIOPEN_FIND_MODE=FAST` — без долгих автотюнов MIOpen, которые на Vega20
+  любят зависать.
+- `HIP_VISIBLE_DEVICES=0,1` — обе MI50 по умолчанию.
 
-Override any of these by exporting them yourself before invoking the script.
+Любую переменную можно перебить, просто экспортнув её до запуска скрипта.
 
-## Notes for MI50 16GB
+## Замечания по MI50 16GB
 
-- Keep `--images-per-device 1` for 1024×1024 SDXL on 16GB GPUs.
-- Use `--dtype fp16`; SDXL in fp32 will usually exceed 16GB per card.
-- The script keeps scheduler parameters in fp32 even when model weights are
-  cast to fp16. This avoids common SDXL scheduler precision failures.
-- If the latest JAX ROCm wheels fail with Triton or `gfx906` compiler errors,
-  install an earlier date from the same `v2-staging/gfx906` index by running
-  `scripts/install_rocm_jax.sh <YYYYMMDD>` with a known-good date. The script
-  pins `jaxlib`, `jax-rocm7-plugin`, `jax-rocm7-pjrt`, and
-  `rocm-sdk-libraries-gfx906` to that same date.
-- For diagnostics only, use `--no-jit`; normal generation should keep JIT on.
-- If you see `XLA_PYTHON_CLIENT_MEM_FRACTION` related OOMs, lower it with
-  `--mem-fraction 0.85` (or even `0.80`).
+- Держи `--images-per-device 1` для 1024×1024 SDXL.
+- `--dtype fp16` — fp32 SDXL не влезет в 16GB.
+- Параметры планировщика остаются в fp32 даже при fp16-весах: иначе у SDXL
+  встречается рассинхрон сигм.
+- Если новейший nightly валится с ошибками Triton/`gfx906`-компилятора —
+  переустановись на более раннюю дату через
+  `scripts/install_rocm_jax.sh <YYYYMMDD>`. Скрипт зафиксирует все четыре
+  колеса (`jaxlib`, `jax-rocm7-plugin`, `jax-rocm7-pjrt`,
+  `rocm-sdk-libraries-gfx906`) на одну дату.
+- Если ловишь OOM — снижай `--mem-fraction 0.85` (или `0.80`).
+- `--no-jit` — только для отладки; обычная генерация должна идти с JIT.

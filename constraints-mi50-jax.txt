@@ -1,0 +1,4 @@
+# Keep the Python JAX package aligned with the ROCm nightly wheel set used in
+# the README. This file intentionally does not list jaxlib or ROCm plugin
+# packages; install those directly from the gfx906 nightly index first.
+jax==0.9.0

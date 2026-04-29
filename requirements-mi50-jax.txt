@@ -1,15 +1,16 @@
-# SDXL/Flax runtime packages. Install these after the ROCm/JAX nightly packages
-# from https://rocm.nightlies.amd.com/v2-staging/gfx906/.
+# SDXL/Flax runtime packages. Install these with:
 #
-# Do not put jaxlib, jax_rocm7_plugin, jax_rocm7_pjrt, or ROCm runtime wheels
-# here; install them from the gfx906 nightly index so the binary stack matches
-# your MI50 cards.
-jax
-diffusers[flax]
+#   python3 -m pip install \
+#     --constraint constraints-mi50-jax.txt \
+#     -r requirements-mi50-jax.txt
+#
+# Do not use diffusers[torch], accelerate, or any package that pulls PyTorch.
+# Do not put jax/jaxlib here either; install the ROCm/JAX stack first.
+diffusers
 flax
 transformers
-accelerate
 safetensors
 sentencepiece
 Pillow
 numpy
+scipy

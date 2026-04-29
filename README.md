@@ -29,7 +29,9 @@ docker run --rm -it \
   bash
 ```
 
-Inside the container:
+Inside the container, install the ROCm/JAX stack first. Keep these packages on
+the same nightly date; do not let a later `pip install` replace them with PyPI
+CPU wheels.
 
 ```bash
 export HIP_VISIBLE_DEVICES=0,1
@@ -38,31 +40,22 @@ export XLA_PYTHON_CLIENT_PREALLOCATE=false
 
 python3 -m pip install --upgrade pip
 python3 -m pip install \
-  --extra-index-url https://rocm.nightlies.amd.com/v2-staging/gfx906/ \
-  rocm-sdk-libraries-gfx906 \
-  jaxlib \
-  jax-rocm7-plugin \
-  jax-rocm7-pjrt
-
-python3 -m pip install -r requirements-mi50-jax.txt
-```
-
-`jax` itself comes from PyPI; `jaxlib`, `jax_rocm7_plugin`,
-`jax_rocm7_pjrt`, and the ROCm runtime libraries come from the `gfx906`
-nightly index.
-
-If pip resolves an incompatible nightly mix, pin the ROCm/JAX packages to the
-same nightly date. For example, for Python 3.12 and the `20260428` build:
-
-```bash
-python3 -m pip install \
-  --extra-index-url https://rocm.nightlies.amd.com/v2-staging/gfx906/ \
+  --index-url https://rocm.nightlies.amd.com/v2-staging/gfx906/ \
   "rocm-sdk-libraries-gfx906==7.13.0a20260428" \
   "jaxlib==0.9.0+rocm7.13.0a20260428" \
   "jax-rocm7-plugin==0.9.1+rocm7.13.0a20260428" \
   "jax-rocm7-pjrt==0.9.1+rocm7.13.0a20260428"
 python3 -m pip install "jax==0.9.0"
+
+python3 -m pip install \
+  --constraint constraints-mi50-jax.txt \
+  -r requirements-mi50-jax.txt
 ```
+
+`requirements-mi50-jax.txt` intentionally does not include `jax`, `jaxlib`,
+`jax_rocm7_plugin`, `jax_rocm7_pjrt`, `accelerate`, `torch`, or `torchvision`.
+The constraints file pins the already-installed JAX/ROCm stack so installing
+Diffusers/Flax dependencies does not replace it.
 
 If you use a private or gated Hugging Face model, log in first:
 
